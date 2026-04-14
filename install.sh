@@ -39,7 +39,7 @@ command -v uci   >/dev/null 2>&1 || error "uci не найден (это не Op
 
 # ── Скачиваем бинарник ────────────────────────────────────
 info "Скачиваем бинарник olcrtc..."
-wget -q --show-progress -O "$BINARY_DST" "$BINARY_URL" || \
+wget -q -O "$BINARY_DST" "$BINARY_URL" || \
     error "Не удалось скачать бинарник с $BINARY_URL"
 chmod 755 "$BINARY_DST"
 info "Бинарник установлен: $BINARY_DST"
