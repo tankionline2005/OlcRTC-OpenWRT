@@ -119,20 +119,14 @@ OlcRTC-OpenWRT/
 ```
 
 ---
-
-## Благодарности
-
-- [zarazaex](https://t.me/zarazaexe) и [openlibrecommunity](https://github.com/openlibrecommunity) — за создание OlcRTC
-
----
-
----
 ## Как скомпилировать?
 
 1) Определите архитектуру своего роутера.
 Подключитесь к роутеру по SSH и выполните:
+```
 shcat /proc/cpuinfo | grep cpu | head -1
 uname -m
+```
 
 В большинстве случаев всё сразу становится понятно:
 
@@ -143,10 +137,12 @@ armv7 — arm + GOARM=7
 x86_64 — amd64
 
 2) Скачайте репозиторий OlcRTC
+```
 git clone https://github.com/openlibrecommunity/olcrtc
 cd olcrtc
+```
 
-3) Скомпилируйте (команды для Linux/Microsoft PowerShell):
+4) Скомпилируйте (команды для Linux/Microsoft PowerShell):
 
 mips big-endian (некоторые Mikrotik, Netgear)
 ```
@@ -177,6 +173,8 @@ $env:GOOS="linux"; $env:GOARCH="arm"; $env:GOARM="7"; $env:CGO_ENABLED="0"; go b
 ```
 ---
 
-## Лицензия
+## Благодарности
 
-Код данного проекта распространяется под лицензией **WTFPL**.
+- [zarazaex](https://t.me/zarazaexe) и [openlibrecommunity](https://github.com/openlibrecommunity) — за создание OlcRTC
+
+---
