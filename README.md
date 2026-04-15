@@ -2,10 +2,12 @@
 
 Панель управления LuCI для запуска [OlcRTC](https://github.com/openlibrecommunity/olcrtc) в режиме клиента на роутере с OpenWRT.
 
+> [!NOTE] 
 > **OlcRTC** — проект [zarazaex](https://github.com/zarazaex69) / [openlibrecommunity](https://github.com/openlibrecommunity).  
 > Реализация обхода блокировок через WebRTC-туннели поверх разрешённых сервисов.  
 
----
+> [!CAUTION]
+> OlcRTC находится в статусе pre-alpha, возможны любые непресказуемые ошибки!
 
 ## Что это такое
 
@@ -14,8 +16,6 @@ OlcRTC запускается на роутере как SOCKS5-прокси.
 
 Данный проект добавляет удобный веб-интерфейс в стандартное меню LuCI (**Службы → OlcRTC**).
 
----
-
 ## Возможности
 
 - Выбор провайдера: **Telemost** или **Jazz**
@@ -23,8 +23,6 @@ OlcRTC запускается на роутере как SOCKS5-прокси.
 - Кнопки **Старт** и **Стоп**
 - Индикатор статуса с PID
 - Отображение логов
-
----
 
 ## Требования
 
@@ -45,8 +43,6 @@ OlcRTC запускается на роутере как SOCKS5-прокси.
 sh -c "$(wget -qO- https://raw.githubusercontent.com/tankionline2005/OlcRTC-OpenWRT/main/install.sh)"
 ```
 
----
-
 ## Использование прокси
 
 После запуска на роутере доступен SOCKS5-прокси:
@@ -58,8 +54,6 @@ sh -c "$(wget -qO- https://raw.githubusercontent.com/tankionline2005/OlcRTC-Open
 ```
 
 Укажите эти настройки в браузере, приложении или в установленном сервисе (Например podkop)
-
----
 
 ## Удаление
 
@@ -169,7 +163,3 @@ $env:GOOS="windows"; $env:GOARCH="amd64"; $env:CGO_ENABLED="0"; go build -trimpa
 ./build/olcrtc-linux-amd64 -mode srv -provider "telemost" -id "06627677819234"
 ./build/olcrtc-linux-amd64 -mode srv -provider "jazz" -id "any"
 ```
----
-## Благодарность
-
-- [zarazaex](https://github.com/zarazaex69) и [openlibrecommunity](https://github.com/openlibrecommunity) — за создание OlcRTC
