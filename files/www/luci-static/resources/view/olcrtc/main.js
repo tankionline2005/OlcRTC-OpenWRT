@@ -1,18 +1,24 @@
 'use strict';
 'require view';
-'require form';
 'require uci';
 'require rpc';
 'require ui';
-'require poll';
 
 /*
  * OlcRTC-OpenWRT — LuCI-панель управления
  * Основана на проекте OlcRTC (https://github.com/openlibrecommunity/olcrtc)
  * автора zarazaex / openlibrecommunity
+ *
+ * Сохранение: автоматическое при изменении любого поля (ubus uci/set + uci/commit).
+ * НЕ используем uci.apply() — он предназначен для сетевых настроек и вызывает
+ * ошибку "ubus code 5: No data received" при использовании не по назначению.
  */
 
-/* ── RPC-вызовы ─────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   RPC-объявления (прямые ubus-вызовы, без LuCI-прослойки)
+   ══════════════════════════════════════════════════════════ */
+
+/* Управление сервисом через procd rc */
 var callInitAction = rpc.declare({
     object : 'rc',
     method : 'init',
@@ -20,6 +26,7 @@ var callInitAction = rpc.declare({
     expect : { result: 0 }
 });
 
+/* Список запущенных сервисов procd */
 var callServiceList = rpc.declare({
     object : 'service',
     method : 'list',
@@ -27,18 +34,37 @@ var callServiceList = rpc.declare({
     expect : { '': {} }
 });
 
-var callFileRead = rpc.declare({
-    object : 'file',
-    method : 'read',
-    params : [ 'path' ],
-    expect : { data: '' }
+/* Запись значений UCI (без apply!) */
+var callUciSet = rpc.declare({
+    object : 'uci',
+    method : 'set',
+    params : [ 'config', 'section', 'values' ],
+    expect : {}
 });
 
-/* ── Вспомогательные функции ────────────────────────────── */
+/* Коммит UCI на диск (аналог `uci commit olcrtc`) */
+var callUciCommit = rpc.declare({
+    object : 'uci',
+    method : 'commit',
+    params : [ 'config' ],
+    expect : {}
+});
+
+/* Выполнение команды (для чтения logread) */
+var callExec = rpc.declare({
+    object : 'file',
+    method : 'exec',
+    params : [ 'command', 'params', 'env' ],
+    expect : { stdout: '' }
+});
+
+/* ══════════════════════════════════════════════════════════
+   Вспомогательные функции
+   ══════════════════════════════════════════════════════════ */
+
 function getStatus() {
     return callServiceList('olcrtc').then(function (res) {
-        var instances = L.isObject(res, 'olcrtc') &&
-                        L.isObject(res.olcrtc, 'instances')
+        var instances = (res && res.olcrtc && res.olcrtc.instances)
                         ? res.olcrtc.instances : {};
         var running = false;
         var pid     = null;
@@ -46,7 +72,7 @@ function getStatus() {
         Object.keys(instances).forEach(function (k) {
             if (instances[k].running) {
                 running = true;
-                pid = instances[k].pid || null;
+                pid     = instances[k].pid || null;
             }
         });
 
@@ -56,20 +82,37 @@ function getStatus() {
     });
 }
 
-function renderStatusBadge(running, pid) {
-    var dot   = running ? '🟢' : '🔴';
-    var label = running
-        ? ('Работает' + (pid ? ' (PID: ' + pid + ')' : ''))
-        : 'Остановлен';
-    return dot + ' <strong>' + label + '</strong>';
+function getLogs() {
+    return callExec('/sbin/logread', [ '-e', 'olcrtc' ], null)
+        .then(function (res) {
+            return (res && res.length > 0) ? res : '(записей в логе пока нет)';
+        })
+        .catch(function () {
+            /* Fallback: logread без фильтра, потом фильтруем сами */
+            return callExec('/sbin/logread', [], null)
+                .then(function (res) {
+                    if (!res) return '(лог пуст)';
+                    var lines = res.split('\n').filter(function (l) {
+                        return l.toLowerCase().indexOf('olcrtc') !== -1;
+                    });
+                    return lines.length ? lines.join('\n') : '(записей с тегом olcrtc нет)';
+                })
+                .catch(function () {
+                    return '(logread недоступен — проверьте ACL в /usr/share/rpcd/acl.d/)';
+                });
+        });
 }
 
-/* ── Основной вид ───────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════
+   Основной вид
+   ══════════════════════════════════════════════════════════ */
 return view.extend({
 
-    /* хранит ссылки на DOM-элементы для обновления */
-    _statusEl : null,
-    _logsEl   : null,
+    _pollTimer : null,
+    _statusEl  : null,
+    _logsEl    : null,
+    _startBtn  : null,
+    _stopBtn   : null,
 
     load: function () {
         return Promise.all([
@@ -78,161 +121,250 @@ return view.extend({
         ]);
     },
 
-    /* Периодическое обновление статуса и логов */
+    /* Моментальное сохранение одного поля через ubus */
+    _saveField: function (key, value) {
+        var values = {};
+        values[key] = value;
+        callUciSet('olcrtc', 'config', values)
+            .then(function () { return callUciCommit('olcrtc'); })
+            .catch(function (e) {
+                console.error('[OlcRTC] Ошибка сохранения UCI:', e);
+            });
+    },
+
+    /* Обновление индикатора статуса и состояния кнопок */
+    _updateUI: function (status) {
+        if (this._statusEl) {
+            var dot   = status.running ? '🟢' : '🔴';
+            var label = status.running
+                ? ('Работает' + (status.pid ? ' (PID\u00a0' + status.pid + ')' : ''))
+                : 'Остановлен';
+            this._statusEl.innerHTML = dot + ' <strong>' + label + '</strong>';
+        }
+
+        if (this._startBtn) {
+            this._startBtn.disabled    = !!status.running;
+            this._startBtn.style.opacity = status.running ? '0.5' : '1';
+        }
+        if (this._stopBtn) {
+            this._stopBtn.disabled     = !status.running;
+            this._stopBtn.style.opacity  = !status.running ? '0.5' : '1';
+        }
+    },
+
+    /* Polling каждую секунду */
     _startPolling: function () {
         var self = this;
-        poll.add(function () {
-            return Promise.all([
-                getStatus(),
-                callFileRead('/tmp/olcrtc.log').catch(function () { return { data: '' }; })
-            ]).then(function (res) {
-                var status = res[0];
+        if (self._pollTimer) clearInterval(self._pollTimer);
 
-                if (self._statusEl) {
-                    self._statusEl.innerHTML = renderStatusBadge(status.running, status.pid);
-                }
-
-                /* Логи через logread (читаем /tmp/olcrtc.log если пишем туда,
-                   иначе пытаемся через системный лог) */
+        self._pollTimer = setInterval(function () {
+            Promise.all([ getStatus(), getLogs() ]).then(function (res) {
+                self._updateUI(res[0]);
                 if (self._logsEl) {
-                    callFileRead('/tmp/olcrtc.log').then(function (r) {
-                        var txt = (r && r.data) ? r.data : '(логи недоступны)';
-                        self._logsEl.textContent = txt;
-                        self._logsEl.scrollTop   = self._logsEl.scrollHeight;
-                    }).catch(function () {
-                        self._logsEl.textContent = '(логи недоступны)';
-                    });
+                    var el       = self._logsEl;
+                    var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                    el.textContent = res[1];
+                    if (atBottom) el.scrollTop = el.scrollHeight;
                 }
             });
-        }, 5);
+        }, 1000);
     },
 
     render: function (data) {
         var self       = this;
         var initStatus = data[1];
 
-        /* ── Форма UCI ──────────────────────────────────────── */
-        var m = new form.Map('olcrtc',
-            'OlcRTC');
+        /* Читаем сохранённые значения UCI */
+        var cfg = {
+            provider   : uci.get('olcrtc', 'config', 'provider')   || 'telemost',
+            room_id    : uci.get('olcrtc', 'config', 'room_id')    || '',
+            key        : uci.get('olcrtc', 'config', 'key')        || '',
+            socks_port : uci.get('olcrtc', 'config', 'socks_port') || '1080',
+            enabled    : uci.get('olcrtc', 'config', 'enabled')    || '0'
+        };
 
-        var s = m.section(form.NamedSection, 'config', 'olcrtc', 'Настройки подключения');
-        s.anonymous = true;
+        /* ── Блок статуса ───────────────────────────────────── */
+        var statusSpan = E('span');
+        self._statusEl = statusSpan;
 
-        /* Провайдер */
-        var o = s.option(form.ListValue, 'provider', 'Провайдер');
-        o.value('telemost', 'telemost.yandex.ru');
-        o.value('jazz',     'salutejazz.ru');
-        o.default = 'telemost';
+        var startBtn = E('button', {
+            class : 'btn cbi-button cbi-button-apply',
+            style : 'margin-right:8px',
+            click : ui.createHandlerFn(self, function () {
+                return callInitAction('olcrtc', 'start')
+                    .then(function () {
+                        ui.addNotification(null, E('p', 'OlcRTC запущен'), 'info');
+                    })
+                    .catch(function (e) {
+                        ui.addNotification(null,
+                            E('p', 'Ошибка запуска: ' + (e.message || e)), 'error');
+                    });
+            })
+        }, '▶ Старт');
 
-        /* Room ID */
-        o = s.option(form.Value, 'room_id', 'Room ID',
-            'Идентификатор комнаты');
-        o.placeholder = 'Например: 49286587700808';
-        o.rmempty = false;
+        var stopBtn = E('button', {
+            class : 'btn cbi-button cbi-button-reset',
+            click : ui.createHandlerFn(self, function () {
+                return callInitAction('olcrtc', 'stop')
+                    .then(function () {
+                        ui.addNotification(null, E('p', 'OlcRTC остановлен'), 'info');
+                    })
+                    .catch(function (e) {
+                        ui.addNotification(null,
+                            E('p', 'Ошибка остановки: ' + (e.message || e)), 'error');
+                    });
+            })
+        }, '■ Стоп');
 
-        /* Ключ */
-        o = s.option(form.Value, 'key', 'Ключ (key)',
-            'Общий секретный ключ (hex-строка, 64 символа)');
-        o.placeholder = 'e5265a924657a8807dcef7a7b8e89562...';
-        o.password = true;
-        o.rmempty  = false;
+        self._startBtn = startBtn;
+        self._stopBtn  = stopBtn;
+        self._updateUI(initStatus);
 
-        /* SOCKS-порт */
-        o = s.option(form.Value, 'socks_port', 'SOCKS5-порт',
-            'Локальный порт для SOCKS5-прокси (по умолчанию 1080)');
-        o.placeholder = '1080';
-        o.datatype    = 'port';
-        o.default     = '1080';
+        var statusSection = E('div', { class: 'cbi-section' }, [
+            E('legend', {}, 'Статус'),
+            E('div', { class: 'cbi-section-node' }, [
+                E('div', { style: 'margin-bottom:14px;font-size:1.15em;line-height:1.8;' },
+                    statusSpan),
+                E('div', {}, [ startBtn, stopBtn ])
+            ])
+        ]);
 
-        /* Автозапуск */
-        o = s.option(form.Flag, 'enabled', 'Автозапуск при загрузке');
-        o.default = '0';
-
-        /* ── Рендер формы ───────────────────────────────────── */
-        return m.render().then(function (formNode) {
-
-            /* ── Блок статуса ───────────────────────────────── */
-            var statusSection = E('div', { class: 'cbi-section' }, [
-                E('h3', {}, 'Статус'),
-                E('div', { style: 'margin-bottom:12px; font-size:1.1em;' },
-                    E('span', { id: 'olcrtc-status' },
-                        renderStatusBadge(initStatus.running, initStatus.pid)
-                    )
-                ),
-                E('div', { class: 'cbi-section-node' }, [
-                    /* Кнопка Старт / Перезапуск */
-                    E('button', {
-                        class   : 'btn cbi-button cbi-button-apply',
-                        style   : 'margin-right:8px',
-                        click   : ui.createHandlerFn(self, function () {
-                            return uci.save().then(function () {
-                                return uci.apply();
-                            }).then(function () {
-                                return callInitAction('olcrtc', 'restart');
-                            }).then(function () {
-                                ui.addNotification(null,
-                                    E('p', 'OlcRTC перезапущен'), 'info');
-                            }).catch(function (e) {
-                                ui.addNotification(null,
-                                    E('p', 'Ошибка: ' + e.message), 'error');
-                            });
-                        })
-                    }, '▶ Старт / Перезапуск'),
-
-                    /* Кнопка Стоп */
-                    E('button', {
-                        class : 'btn cbi-button cbi-button-reset',
-                        click : ui.createHandlerFn(self, function () {
-                            return callInitAction('olcrtc', 'stop')
-                                .then(function () {
-                                    ui.addNotification(null,
-                                        E('p', 'OlcRTC остановлен'), 'info');
-                                }).catch(function (e) {
-                                    ui.addNotification(null,
-                                        E('p', 'Ошибка: ' + e.message), 'error');
-                                });
-                        })
-                    }, '■ Стоп')
-                ])
+        /* ── Вспомогательная функция строки формы ───────────── */
+        function row(label, hint, inputEl) {
+            return E('div', { class: 'cbi-value' }, [
+                E('label', { class: 'cbi-value-title' }, label),
+                E('div', { class: 'cbi-value-field' }, [
+                    inputEl,
+                    hint ? E('div', {
+                        class : 'cbi-value-description',
+                        style : 'margin-top:4px;font-size:0.85em;'
+                    }, hint) : null
+                ].filter(Boolean))
             ]);
+        }
 
-            /* ── Блок логов (раскрывающийся) ────────────────── */
-            var logsContent = E('pre', {
-                id    : 'olcrtc-logs',
-                style : 'background:#111;color:#0f0;padding:10px;' +
-                        'max-height:320px;overflow-y:auto;' +
-                        'font-size:0.78em;border-radius:4px;white-space:pre-wrap;'
-            }, 'Загрузка логов...');
+        /* ── Поля формы (автосохранение по событию change/input) */
 
-            var logsSection = E('div', { class: 'cbi-section' }, [
-                E('details', {}, [
-                    E('summary', {
-                        style: 'cursor:pointer;font-weight:bold;font-size:1em;' +
-                               'padding:4px 0;user-select:none;'
-                    }, '📋 Логи'),
-                    E('div', { style: 'margin-top:8px;' }, logsContent)
-                ])
-            ]);
+        var providerSel = E('select', {
+            class  : 'cbi-input-select',
+            change : function (ev) { self._saveField('provider', ev.target.value); }
+        }, [
+            E('option', { value: 'telemost',
+                          selected: cfg.provider === 'telemost' ? '' : null },
+                'Telemost (telemost.yandex.ru)'),
+            E('option', { value: 'jazz',
+                          selected: cfg.provider === 'jazz' ? '' : null },
+                'Jazz (salutejazz.ru)')
+        ]);
 
-            /* Сохраняем ссылки для polling */
-            self._statusEl = formNode.querySelector('#olcrtc-status') ||
-                             statusSection.querySelector('#olcrtc-status');
-            self._logsEl   = logsContent;
+        /* Дебаунс 600 мс для текстовых полей (не спамим ubus при каждом символе) */
+        function makeDebounced(fieldName) {
+            var timer;
+            return {
+                change : function (ev) {
+                    clearTimeout(timer);
+                    self._saveField(fieldName, ev.target.value.trim());
+                },
+                input : function (ev) {
+                    var v = ev.target.value;
+                    clearTimeout(timer);
+                    timer = setTimeout(function () {
+                        self._saveField(fieldName, v.trim());
+                    }, 600);
+                }
+            };
+        }
 
-            self._startPolling();
-
-            return E('div', {}, [ statusSection, formNode, logsSection ]);
+        var roomHandlers = makeDebounced('room_id');
+        var roomInput = E('input', {
+            class       : 'cbi-input-text',
+            type        : 'text',
+            value       : cfg.room_id,
+            placeholder : 'Например: 49286587700808',
+            change      : roomHandlers.change,
+            input       : roomHandlers.input
         });
+
+        var keyHandlers = makeDebounced('key');
+        var keyInput = E('input', {
+            class       : 'cbi-input-text',
+            type        : 'password',
+            value       : cfg.key,
+            placeholder : 'e5265a924657a8807dcef7a7b8e89562...',
+            change      : keyHandlers.change,
+            input       : keyHandlers.input
+        });
+
+        var portInput = E('input', {
+            class       : 'cbi-input-text',
+            type        : 'number',
+            value       : cfg.socks_port,
+            placeholder : '1080',
+            min         : '1',
+            max         : '65535',
+            change : function (ev) {
+                var v = parseInt(ev.target.value);
+                if (v >= 1 && v <= 65535)
+                    self._saveField('socks_port', String(v));
+            }
+        });
+
+        var enabledChk = E('input', {
+            class  : 'cbi-input-checkbox',
+            type   : 'checkbox',
+            checked: cfg.enabled === '1' ? '' : null,
+            change : function (ev) {
+                self._saveField('enabled', ev.target.checked ? '1' : '0');
+            }
+        });
+
+        var settingsSection = E('div', { class: 'cbi-section' }, [
+            E('legend', {}, 'Настройки подключения'),
+            E('div', { class: 'cbi-section-node' }, [
+                E('p', {
+                    style: 'color:#6c757d;font-size:0.88em;margin:0 0 12px;'
+                }, '💾 Изменения сохраняются автоматически'),
+                row('Провайдер', null, providerSel),
+                row('Room ID',
+                    'Идентификатор комнаты (для Telemost — числовой, для Jazz — user:code)',
+                    roomInput),
+                row('Ключ (key)',
+                    'Общий секретный ключ сервера (hex-строка, 64 символа)',
+                    keyInput),
+                row('SOCKS5-порт',
+                    'Локальный порт прокси (по умолчанию 1080)',
+                    portInput),
+                row('Автозапуск при загрузке', null, enabledChk)
+            ])
+        ]);
+
+        /* ── Блок логов (развёрнут по умолчанию) ───────────── */
+        var logsEl = E('pre', {
+            style : 'background:#0d1117;color:#3fb950;padding:12px;' +
+                    'max-height:360px;overflow-y:auto;border-radius:6px;' +
+                    'font-size:0.78em;white-space:pre-wrap;word-break:break-all;' +
+                    'margin:0;border:1px solid #30363d;'
+        }, 'Загрузка логов...');
+        self._logsEl = logsEl;
+
+        var logsSection = E('div', { class: 'cbi-section' }, [
+            E('legend', {}, '📋 Логи (logread -e olcrtc)'),
+            E('div', { class: 'cbi-section-node' }, [ logsEl ])
+        ]);
+
+        /* Запускаем polling */
+        self._startPolling();
+
+        return E('div', {}, [
+            statusSection,
+            settingsSection,
+            logsSection
+        ]);
     },
 
-    handleSaveApply: function (ev) {
-        return this.handleSave(ev).then(function () {
-            return uci.apply();
-        });
-    },
-
-    handleSave: function (ev) {
-        var map = document.querySelector('.cbi-map');
-        return map ? map._luci_map.save() : Promise.resolve();
-    }
+    /* Отключаем стандартные кнопки LuCI Save/Apply/Reset —
+       сохранение идёт автоматически через ubus, они не нужны. */
+    handleSave      : function () { return Promise.resolve(); },
+    handleSaveApply : function () { return Promise.resolve(); },
+    handleReset     : function () { return Promise.resolve(); }
 });
