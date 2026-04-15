@@ -4,7 +4,6 @@
 
 > **OlcRTC** — проект [zarazaex](https://github.com/zarazaex69) / [openlibrecommunity](https://github.com/openlibrecommunity).  
 > Реализация обхода блокировок через WebRTC-туннели поверх разрешённых сервисов.  
-> Лицензия оригинального проекта: **WTFPL**.
 
 ---
 
@@ -22,8 +21,8 @@ OlcRTC запускается на роутере как SOCKS5-прокси.
 - Выбор провайдера: **Telemost** или **Jazz**
 - Ввод Room ID, ключа и SOCKS5-порта
 - Кнопки **Старт / Перезапуск** и **Стоп**
-- Индикатор статуса с PID (🟢 / 🔴), обновляется каждые 5 секунд
-- Раскрывающийся блок с логами
+- Индикатор статуса с PID
+- Отображение логов
 - Настройки сохраняются через UCI (`/etc/config/olcrtc`)
 - Автозапуск при старте роутера (опционально)
 
@@ -169,6 +168,6 @@ $env:GOOS="linux"; $env:GOARCH="arm"; $env:GOARM="7"; $env:CGO_ENABLED="0"; go b
 ```
 ---
 
-## Благодарности
+## Благодарность
 
 - [zarazaex](https://t.me/zarazaexe) и [openlibrecommunity](https://github.com/openlibrecommunity) — за создание OlcRTC
