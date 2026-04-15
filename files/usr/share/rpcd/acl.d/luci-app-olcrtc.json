@@ -5,9 +5,12 @@
       "uci": [ "olcrtc" ],
       "ubus": {
         "service": [ "list" ],
-        "uci": [ "get" ]
+        "uci": [ "get" ],
+        "file": [ "exec", "read" ],
+        "rc": [ "init" ]
       },
       "file": {
+        "/sbin/logread": [ "exec" ],
         "/var/run/olcrtc.pid": [ "read" ]
       }
     },
