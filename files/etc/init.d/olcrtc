@@ -50,6 +50,7 @@ start_service() {
         -link direct \
         -data data \
         -dns "$dns" \
+        -socks-host 0.0.0.0 \
         -socks-port "$socks_port"
     procd_set_param respawn 3600 5 0
     procd_set_param stdout 1

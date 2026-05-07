@@ -112,7 +112,8 @@ function getLogs() {
    ══════════════════════════════════════════════════════════ */
 return view.extend({
 
-    _pollTimer    : null,
+    _statusTimer  : null,   /* опрос статуса каждые 300 мс */
+    _logsTimer    : null,   /* опрос логов каждые 3000 мс  */
     _statusEl     : null,
     _logsEl       : null,
     _startBtn     : null,
@@ -140,7 +141,7 @@ return view.extend({
         if (this._statusEl) {
             var dot   = status.running ? '🟢' : '🔴';
             var label = status.running
-                ? ('Работает' + (status.pid ? ' (PID ' + status.pid + ')' : ''))
+                ? ('Работает' + (status.pid ? ' (PID ' + status.pid + ')' : ''))
                 : 'Остановлен';
             this._statusEl.innerHTML = dot + ' <strong>' + label + '</strong>';
         }
@@ -157,30 +158,35 @@ return view.extend({
 
     _startPolling: function () {
         var self = this;
-        if (self._pollTimer) clearInterval(self._pollTimer);
 
-        self._pollTimer = setInterval(function () {
-            Promise.all([ getStatus(), getLogs() ]).then(function (res) {
-                self._updateUI(res[0]);
-                if (self._logsEl) {
-                    var el       = self._logsEl;
-                    var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
-                    el.textContent = res[1];
-                    if (atBottom) el.scrollTop = el.scrollHeight;
-                }
+        /* Статус — быстрый, лёгкий вызов, обновляем каждые 300 мс */
+        if (self._statusTimer) clearInterval(self._statusTimer);
+        self._statusTimer = setInterval(function () {
+            getStatus().then(function (s) { self._updateUI(s); });
+        }, 300);
+
+        /* Логи — тяжелее, обновляем каждые 3 секунды */
+        if (self._logsTimer) clearInterval(self._logsTimer);
+        self._logsTimer = setInterval(function () {
+            getLogs().then(function (text) {
+                if (!self._logsEl) return;
+                var el       = self._logsEl;
+                var atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+                el.textContent = text;
+                if (atBottom) el.scrollTop = el.scrollHeight;
             });
-        }, 1000);
+        }, 3000);
     },
 
     /* Обновляет список транспортов в зависимости от выбранного carrier.
        Если текущий транспорт несовместим — переключает на vp8channel. */
     _updateTransportOptions: function (carrier) {
-        var self     = this;
-        var sel      = self._transportSel;
+        var self    = this;
+        var sel     = self._transportSel;
         if (!sel) return;
 
-        var allowed  = COMPAT[carrier] || COMPAT['telemost'];
-        var opts     = sel.options;
+        var allowed = COMPAT[carrier] || COMPAT['telemost'];
+        var opts    = sel.options;
 
         for (var i = 0; i < opts.length; i++) {
             opts[i].disabled = allowed.indexOf(opts[i].value) === -1;
@@ -214,6 +220,12 @@ return view.extend({
             class : 'btn cbi-button cbi-button-apply',
             style : 'margin-right:8px',
             click : ui.createHandlerFn(self, function () {
+                /* Моментально блокируем кнопки, не дожидаясь следующего тика */
+                startBtn.disabled      = true;
+                startBtn.style.opacity = '0.5';
+                stopBtn.disabled       = true;
+                stopBtn.style.opacity  = '0.5';
+
                 return callInitAction('olcrtc', 'start')
                     .then(function () {
                         ui.addNotification(null, E('p', 'OlcRTC запущен'), 'info');
@@ -221,6 +233,10 @@ return view.extend({
                     .catch(function (e) {
                         ui.addNotification(null,
                             E('p', 'Ошибка запуска: ' + (e.message || e)), 'error');
+                    })
+                    .then(function () {
+                        /* Принудительный немедленный опрос после действия */
+                        return getStatus().then(function (s) { self._updateUI(s); });
                     });
             })
         }, '▶ Старт');
@@ -228,6 +244,12 @@ return view.extend({
         var stopBtn = E('button', {
             class : 'btn cbi-button cbi-button-reset',
             click : ui.createHandlerFn(self, function () {
+                /* Моментально блокируем кнопки */
+                startBtn.disabled      = true;
+                startBtn.style.opacity = '0.5';
+                stopBtn.disabled       = true;
+                stopBtn.style.opacity  = '0.5';
+
                 return callInitAction('olcrtc', 'stop')
                     .then(function () {
                         ui.addNotification(null, E('p', 'OlcRTC остановлен'), 'info');
@@ -235,6 +257,10 @@ return view.extend({
                     .catch(function (e) {
                         ui.addNotification(null,
                             E('p', 'Ошибка остановки: ' + (e.message || e)), 'error');
+                    })
+                    .then(function () {
+                        /* Принудительный немедленный опрос после действия */
+                        return getStatus().then(function (s) { self._updateUI(s); });
                     });
             })
         }, '■ Стоп');
@@ -284,7 +310,7 @@ return view.extend({
             };
         }
 
-        /* ── Carrier (несущий сервис) ────────────────────────── */
+        /* ── Carrier ─────────────────────────────────────────── */
         var carrierSel = E('select', {
             class  : 'cbi-input-select',
             change : function (ev) {
@@ -304,7 +330,7 @@ return view.extend({
                 'Wildberries Stream (stream.wb.ru)')
         ]);
 
-        /* ── Transport (протокол передачи) ───────────────────── */
+        /* ── Transport ───────────────────────────────────────── */
         var allowed = COMPAT[cfg.carrier] || COMPAT['telemost'];
 
         var transportSel = E('select', {
@@ -341,7 +367,7 @@ return view.extend({
             class       : 'cbi-input-text',
             type        : 'text',
             value       : cfg.room_id,
-            placeholder : 'Для Jazz/WB можно оставить пустым (any)',
+            placeholder : 'Например: 49286587700808',
             change      : roomHandlers.change,
             input       : roomHandlers.input
         });
@@ -397,14 +423,14 @@ return view.extend({
         var settingsSection = E('div', { class: 'cbi-section' }, [
             E('legend', {}, 'Настройки подключения'),
             E('div', { class: 'cbi-section-node' }, [
-                row('Несущий сервис',
+                row('Сервис',
                     'Через какой сервис идёт туннель. Telemost поддерживает меньше транспортов.',
                     carrierSel),
                 row('Транспорт',
                     'Протокол передачи данных внутри туннеля.',
                     transportSel),
                 row('Room ID',
-                    'Для Telemost — ID комнаты с сайта telemost.yandex.ru. Для Jazz / Wildberries — оставьте пустым, ID создастся автоматически.',
+                    'ID комнаты с сервера. Скопируйте из вывода сервера при его первом запуске.',
                     roomInput),
                 row('Client ID',
                     'Короткий идентификатор, должен совпадать с сервером (например: home-router).',
