@@ -1,6 +1,5 @@
 config olcrtc 'config'
 	option arch 'arm64'
-	option sub_url ''
 	option carrier 'telemost'
 	option transport 'vp8channel'
 	option room_id ''

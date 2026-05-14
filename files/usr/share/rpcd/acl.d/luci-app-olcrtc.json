@@ -18,7 +18,7 @@
     "write": {
       "uci": [ "olcrtc" ],
       "ubus": {
-        "uci": [ "set", "commit" ],
+        "uci": [ "set", "commit", "add", "delete" ],
         "service": [ "set", "call" ],
         "rc": [ "init" ]
       }
