@@ -11,6 +11,7 @@
       },
       "file": {
         "/sbin/logread": [ "exec" ],
+        "/usr/bin/wget": [ "exec" ],
         "/var/run/olcrtc.pid": [ "read" ]
       }
     },
