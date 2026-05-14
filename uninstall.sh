@@ -26,11 +26,11 @@ if [ -f /etc/init.d/olcrtc ]; then
     info "init.d скрипт удалён"
 fi
 
-# Удаляем бинарники
-rm -f /usr/bin/olcrtc-arm64 && info "Бинарник ARM64 удалён" || true
-rm -f /usr/bin/olcrtc-amd64 && info "Бинарник AMD64 удалён" || true
-# На случай если установлена старая версия с единым бинарником
-rm -f /usr/bin/olcrtc 2>/dev/null || true
+# Удаляем бинарник
+rm -f /usr/bin/olcrtc && info "Бинарник удалён" || true
+# Для совместимости со старыми версиями
+rm -f /usr/bin/olcrtc-arm64 2>/dev/null || true
+rm -f /usr/bin/olcrtc-amd64 2>/dev/null || true
 
 # Удаляем UCI конфиг
 if [ -f /etc/config/olcrtc ]; then

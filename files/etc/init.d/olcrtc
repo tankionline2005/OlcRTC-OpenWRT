@@ -10,19 +10,16 @@ PIDFILE=/var/run/olcrtc.pid
 LOGTAG="olcrtc"
 
 start_service() {
-    local arch binary carrier transport room_id client_id key
+    local binary carrier transport room_id client_id key
     local socks_host socks_port socks_user socks_pass dns debug
     local vp8_fps vp8_batch
     local sei_fps sei_batch sei_frag sei_ack_ms
     local video_codec video_w video_h video_fps video_bitrate video_hw
     local video_qr_recovery video_qr_size video_tile_module video_tile_rs ffmpeg_bin
 
+    binary='/usr/bin/olcrtc'
+
     config_load olcrtc
-    config_get arch             config arch             'arm64'
-    case "$arch" in
-        amd64) binary='/usr/bin/olcrtc-amd64' ;;
-        *)     binary='/usr/bin/olcrtc-arm64' ;;
-    esac
     config_get carrier          config carrier          'telemost'
     config_get transport        config transport        'vp8channel'
     config_get room_id          config room_id          ''

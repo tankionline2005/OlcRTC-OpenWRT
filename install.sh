@@ -11,8 +11,7 @@ set -e
 REPO_RAW="https://raw.githubusercontent.com/tankionline2005/OlcRTC-OpenWRT/main"
 BINARY_ARM64_URL="${REPO_RAW}/olcrtc-linux-arm64"
 BINARY_AMD64_URL="${REPO_RAW}/olcrtc-linux-amd64"
-BINARY_ARM64_DST="/usr/bin/olcrtc-arm64"
-BINARY_AMD64_DST="/usr/bin/olcrtc-amd64"
+BINARY_DST="/usr/bin/olcrtc"
 INITD="/etc/init.d/olcrtc"
 UCI_CONF="/etc/config/olcrtc"
 LUCI_MENU="/usr/share/luci/menu.d/luci-app-olcrtc.json"
@@ -39,19 +38,23 @@ echo ""
 command -v wget  >/dev/null 2>&1 || error "wget не найден"
 command -v uci   >/dev/null 2>&1 || error "uci не найден (это не OpenWRT?)"
 
-# ── Скачиваем бинарник ARM64 ──────────────────────────────
-info "Скачиваем бинарник olcrtc (ARM64)..."
-wget -q -O "$BINARY_ARM64_DST" "$BINARY_ARM64_URL" || \
-    error "Не удалось скачать бинарник ARM64 с $BINARY_ARM64_URL"
-chmod 755 "$BINARY_ARM64_DST"
-info "Бинарник ARM64 установлен: $BINARY_ARM64_DST"
+# ── Выбор архитектуры ─────────────────────────────────────
+echo "Выберите архитектуру:"
+echo "  1) arm64  — роутеры (Cudy, GL.iNet, OpenWRT на ARM)"
+echo "  2) amd64  — ПК или сервер под OpenWRT (x86-64)"
+printf "Ваш выбор [1/2]: "
+read ARCH_CHOICE
+case "$ARCH_CHOICE" in
+    2) BINARY_URL="$BINARY_AMD64_URL"; ARCH_NAME="AMD64" ;;
+    *) BINARY_URL="$BINARY_ARM64_URL"; ARCH_NAME="ARM64" ;;
+esac
 
-# ── Скачиваем бинарник AMD64 ──────────────────────────────
-info "Скачиваем бинарник olcrtc (AMD64)..."
-wget -q -O "$BINARY_AMD64_DST" "$BINARY_AMD64_URL" || \
-    error "Не удалось скачать бинарник AMD64 с $BINARY_AMD64_URL"
-chmod 755 "$BINARY_AMD64_DST"
-info "Бинарник AMD64 установлен: $BINARY_AMD64_DST"
+# ── Скачиваем бинарник ────────────────────────────────────
+info "Скачиваем бинарник olcrtc (${ARCH_NAME})..."
+wget -q -O "$BINARY_DST" "$BINARY_URL" || \
+    error "Не удалось скачать бинарник с $BINARY_URL"
+chmod 755 "$BINARY_DST"
+info "Бинарник установлен: $BINARY_DST (${ARCH_NAME})"
 
 # ── init.d скрипт ─────────────────────────────────────────
 info "Устанавливаем init.d скрипт..."

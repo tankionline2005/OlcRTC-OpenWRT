@@ -706,7 +706,6 @@ return view.extend({
         self._subscriptions = [];
 
         var cfg = {
-            arch             : uci.get('olcrtc', 'config', 'arch')              || 'arm64',
             carrier          : uci.get('olcrtc', 'config', 'carrier')           || 'telemost',
             transport        : uci.get('olcrtc', 'config', 'transport')         || 'vp8channel',
             room_id          : uci.get('olcrtc', 'config', 'room_id')           || '',
@@ -881,15 +880,6 @@ return view.extend({
         var matrixTable = E('table', { style: 'border-collapse:collapse;margin-bottom:4px;' }, [
             E('thead', {}, [E('tr', {}, headerCells)]),
             E('tbody', {}, matrixRows)
-        ]);
-
-        /* ── Архитектура ─────────────────────────────────────── */
-        var archSel = E('select', {
-            class  : 'cbi-input-select',
-            change : function (ev) { self._saveField('arch', ev.target.value); }
-        }, [
-            E('option', { value: 'arm64', selected: cfg.arch === 'arm64' ? '' : null }, 'ARM64 / aarch64 — роутеры (Cudy, GL.iNet, OpenWRT на ARM)'),
-            E('option', { value: 'amd64', selected: cfg.arch === 'amd64' ? '' : null }, 'AMD64 / x86-64 — ПК или сервер под OpenWRT')
         ]);
 
         /* ── Carrier / Transport ─────────────────────────────── */
@@ -1121,8 +1111,6 @@ return view.extend({
         var settingsSection = E('div', { class: 'cbi-section' }, [
             E('legend', {}, 'Настройки подключения'),
             E('div', { class: 'cbi-section-node' }, [
-                row('Архитектура бинарника', 'Выберите архитектуру процессора вашего устройства. Большинство современных роутеров — ARM64.', archSel),
-                E('hr', { style: 'border:none;border-top:1px solid #21262d;margin:12px 0;' }),
                 E('div', { style: 'margin-bottom:16px;overflow-x:auto;' }, [ matrixTable ]),
                 row('Сервис',    'Через какой сервис идёт туннель.', carrierSel),
                 row('Транспорт', 'Протокол передачи данных внутри туннеля.', transportSel),
