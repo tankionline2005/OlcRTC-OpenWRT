@@ -75,7 +75,7 @@ else
 fi
 
 # ── HWID — идентификатор установки ───────────────────────
-HWID_CUR="$(uci get olcrtc.config.hwid 2>/dev/null)"
+HWID_CUR="$(uci get olcrtc.config.hwid 2>/dev/null || true)"
 if [ -z "$HWID_CUR" ]; then
     HWID="install-$(cat /proc/sys/kernel/random/uuid | tr -d '-')"
     uci set olcrtc.config.hwid="$HWID"
