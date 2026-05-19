@@ -1,3 +1,5 @@
+# Я ЗАБИЛ И БОЛЬШЕ НЕ ОБНОВЛЯЮ ЭТУ ПАНЕЛЬ - МОЖЕТЕ СДЕЛАТЬ ФОРК И ПОДДЕРЖИВАТЬ ЕЁ ДАЛЬШЕ
+
 # OlcRTC-OpenWRT
 
 Панель управления LuCI для запуска [OlcRTC](https://github.com/openlibrecommunity/olcrtc) в режиме клиента на роутере с OpenWRT.
